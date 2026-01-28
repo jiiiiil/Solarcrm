@@ -46,6 +46,13 @@ import { ServiceScreen } from '@/app/components/screens/ServiceScreen';
 import { MonitoringScreen } from '@/app/components/screens/MonitoringScreen';
 import { QuotationScreen } from '@/app/components/screens/QuotationScreen';
 import { ProjectsScreen } from '@/app/components/screens/ProjectsScreen';
+import { LogisticsScreen } from '@/app/components/screens/LogisticsScreen';
+import { InstallationScreen } from '@/app/components/screens/InstallationScreen';
+import { CommunityScreen } from '@/app/components/screens/CommunityScreen';
+import { EmployeeScreen } from '@/app/components/screens/EmployeeScreen';
+import { ComplianceScreen } from '@/app/components/screens/ComplianceScreen';
+import { ReportsScreen } from '@/app/components/screens/ReportsScreen';
+import { SettingsScreen } from '@/app/components/screens/SettingsScreen';
 
 const navigationItems = [
   { icon: LayoutDashboard, label: 'Dashboard', active: true },
@@ -170,16 +177,32 @@ export function SolarDashboard() {
         return <QuotationScreen />;
       case 'Projects':
         return <ProjectsScreen />;
-      case 'Production':
-        return <ProductionTracker />;
       case 'Inventory':
         return <InventoryScreen />;
+      case 'Production':
+        return <ProductionTracker />;
+      case 'Logistics':
+        return <LogisticsScreen />;
+      case 'Installation':
+        return <InstallationScreen />;
       case 'Finance':
         return <FinanceScreen />;
-      case 'Service & O&M':
-        return <ServiceScreen />;
       case 'Monitoring':
         return <MonitoringScreen />;
+      case 'Service & O&M':
+        return <ServiceScreen />;
+      case 'Community':
+        return <CommunityScreen />;
+      case 'Employees':
+        return <EmployeeScreen />;
+      case 'Compliance':
+        return <ComplianceScreen />;
+      case 'Reports':
+        return <ReportsScreen />;
+      case 'Settings':
+        return <SettingsScreen />;
+      case 'Quality Control':
+        return <div className="text-center p-8"><h2 className="text-2xl font-semibold">Quality Control Module - Coming Soon</h2></div>;
       case 'Dashboard':
       default:
         return <DashboardHome />;
