@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { ReactNode } from 'react';
 import { 
   LayoutDashboard, 
   Users, 
@@ -35,24 +35,8 @@ import { Badge } from '@/app/components/ui/badge';
 import { Input } from '@/app/components/ui/input';
 import { Button } from '@/app/components/ui/button';
 import { Avatar, AvatarFallback } from '@/app/components/ui/avatar';
-
-// Import all screens
-import { LeadsCRM } from '@/app/components/screens/LeadsCRM';
-import { SurveyScreen } from '@/app/components/screens/SurveyScreen';
-import { ProductionTracker } from '@/app/components/screens/ProductionTracker';
-import { InventoryScreen } from '@/app/components/screens/InventoryScreen';
-import { FinanceScreen } from '@/app/components/screens/FinanceScreen';
-import { ServiceScreen } from '@/app/components/screens/ServiceScreen';
-import { MonitoringScreen } from '@/app/components/screens/MonitoringScreen';
-import { QuotationScreen } from '@/app/components/screens/QuotationScreen';
-import { ProjectsScreen } from '@/app/components/screens/ProjectsScreen';
-import { LogisticsScreen } from '@/app/components/screens/LogisticsScreen';
-import { InstallationScreen } from '@/app/components/screens/InstallationScreen';
-import { CommunityScreen } from '@/app/components/screens/CommunityScreen';
-import { EmployeeScreen } from '@/app/components/screens/EmployeeScreen';
-import { ComplianceScreen } from '@/app/components/screens/ComplianceScreen';
-import { ReportsScreen } from '@/app/components/screens/ReportsScreen';
-import { SettingsScreen } from '@/app/components/screens/SettingsScreen';
+import { useAppStore } from '@/app/store/AppStore';
+import { toast } from 'sonner';
 
 const navigationItems = [
   { icon: LayoutDashboard, label: 'Dashboard', active: true },
@@ -163,51 +147,8 @@ const alerts = [
   },
 ];
 
-export function SolarDashboard() {
-  const [activePage, setActivePage] = useState('Dashboard');
-
-  // Render active screen
-  const renderContent = () => {
-    switch (activePage) {
-      case 'Leads & CRM':
-        return <LeadsCRM />;
-      case 'Survey & Design':
-        return <SurveyScreen />;
-      case 'Quotations':
-        return <QuotationScreen />;
-      case 'Projects':
-        return <ProjectsScreen />;
-      case 'Inventory':
-        return <InventoryScreen />;
-      case 'Production':
-        return <ProductionTracker />;
-      case 'Logistics':
-        return <LogisticsScreen />;
-      case 'Installation':
-        return <InstallationScreen />;
-      case 'Finance':
-        return <FinanceScreen />;
-      case 'Monitoring':
-        return <MonitoringScreen />;
-      case 'Service & O&M':
-        return <ServiceScreen />;
-      case 'Community':
-        return <CommunityScreen />;
-      case 'Employees':
-        return <EmployeeScreen />;
-      case 'Compliance':
-        return <ComplianceScreen />;
-      case 'Reports':
-        return <ReportsScreen />;
-      case 'Settings':
-        return <SettingsScreen />;
-      case 'Quality Control':
-        return <div className="text-center p-8"><h2 className="text-2xl font-semibold">Quality Control Module - Coming Soon</h2></div>;
-      case 'Dashboard':
-      default:
-        return <DashboardHome />;
-    }
-  };
+export function SolarDashboard({ children }: { children: ReactNode }) {
+  const { currentModule, setCurrentModule } = useAppStore();
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -233,9 +174,9 @@ export function SolarDashboard() {
             return (
               <button
                 key={item.label}
-                onClick={() => setActivePage(item.label)}
+                onClick={() => setCurrentModule(item.label as any)}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${
-                  activePage === item.label
+                  currentModule === item.label
                     ? 'bg-blue-50 text-blue-700'
                     : 'text-gray-700 hover:bg-gray-100'
                 }`}
@@ -289,7 +230,10 @@ export function SolarDashboard() {
                 <span>AI Assistant</span>
               </Button>
               
-              <button className="relative p-2 hover:bg-gray-100 rounded-lg">
+              <button
+                className="relative p-2 hover:bg-gray-100 rounded-lg"
+                onClick={() => toast.message('No new notifications')}
+              >
                 <Bell className="w-5 h-5 text-gray-600" />
                 <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
               </button>
@@ -299,7 +243,7 @@ export function SolarDashboard() {
 
         {/* Dashboard Content */}
         <main className="flex-1 overflow-y-auto p-6">
-          {renderContent()}
+          {children}
         </main>
       </div>
     </div>
@@ -307,7 +251,8 @@ export function SolarDashboard() {
 }
 
 // Dashboard Home Component
-function DashboardHome() {
+export function DashboardHome() {
+  const { setCurrentModule } = useAppStore();
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Page Title */}
@@ -335,10 +280,15 @@ function DashboardHome() {
                 Cells are limiting factor. Suggested action: Reorder 500 units to meet next week's demand.
               </p>
               <div className="flex gap-2 mt-3">
-                <Button size="sm" variant="default" className="bg-purple-600 hover:bg-purple-700">
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="bg-purple-600 hover:bg-purple-700"
+                  onClick={() => setCurrentModule('Inventory')}
+                >
                   Create Purchase Order
                 </Button>
-                <Button size="sm" variant="outline">
+                <Button size="sm" variant="outline" onClick={() => setCurrentModule('Inventory')}>
                   View Details
                 </Button>
               </div>
@@ -423,6 +373,9 @@ function DashboardHome() {
               </div>
             ))}
           </div>
+          <Button variant="outline" size="sm" className="w-full mt-4">
+            View All Notifications
+          </Button>
         </Card>
 
         {/* Alerts & Notifications */}
@@ -465,27 +418,27 @@ function DashboardHome() {
       <Card className="p-6">
         <h3 className="font-semibold text-gray-900 mb-4">Quick Actions</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          <Button variant="outline" className="h-auto py-4 flex flex-col gap-2">
+          <Button variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => setCurrentModule('Leads & CRM')}>
             <Users className="w-5 h-5 text-blue-600" />
             <span className="text-sm">New Lead</span>
           </Button>
-          <Button variant="outline" className="h-auto py-4 flex flex-col gap-2">
+          <Button variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => setCurrentModule('Survey & Design')}>
             <MapPin className="w-5 h-5 text-green-600" />
             <span className="text-sm">Schedule Survey</span>
           </Button>
-          <Button variant="outline" className="h-auto py-4 flex flex-col gap-2">
+          <Button variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => setCurrentModule('Quotations')}>
             <FileText className="w-5 h-5 text-purple-600" />
             <span className="text-sm">Create Quote</span>
           </Button>
-          <Button variant="outline" className="h-auto py-4 flex flex-col gap-2">
+          <Button variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => setCurrentModule('Inventory')}>
             <Package className="w-5 h-5 text-orange-600" />
             <span className="text-sm">Check Inventory</span>
           </Button>
-          <Button variant="outline" className="h-auto py-4 flex flex-col gap-2">
+          <Button variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => setCurrentModule('Production')}>
             <Factory className="w-5 h-5 text-red-600" />
             <span className="text-sm">Production Line</span>
           </Button>
-          <Button variant="outline" className="h-auto py-4 flex flex-col gap-2">
+          <Button variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => setCurrentModule('Reports')}>
             <BarChart3 className="w-5 h-5 text-indigo-600" />
             <span className="text-sm">View Reports</span>
           </Button>

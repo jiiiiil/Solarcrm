@@ -1,6 +1,8 @@
 import { Card } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
+import { useAppStore } from '@/app/store/AppStore';
+import { toast } from 'sonner';
 import { 
   Activity, 
   Sparkles,
@@ -12,6 +14,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useMemo } from 'react';
 
 const generationData = [
   { time: '6 AM', generation: 0.5, expected: 0.8 },
@@ -67,6 +70,103 @@ const stats = [
 ];
 
 export function MonitoringScreen() {
+  const { projects, settings, updateSettings, addReport, addServiceTicket, setCurrentModule } = useAppStore();
+
+  const isLive = settings?.monitoringLive ?? true;
+
+  const computedPlants = useMemo(() => {
+    const safeProjects = projects ?? [];
+    if (safeProjects.length === 0) return plants;
+
+    return safeProjects.slice(0, 6).map((p, idx) => {
+      const base = plants[idx % plants.length];
+      return {
+        id: p.id,
+        name: p.customer,
+        capacity: p.capacity,
+        location: p.location,
+        currentGen: base.currentGen,
+        todayGen: base.todayGen,
+        health: base.health,
+        status: base.status,
+        alerts: base.alerts,
+      };
+    });
+  }, [projects]);
+
+  const downloadTextFile = (filename: string, content: string) => {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleToggleLive = () => {
+    updateSettings({ monitoringLive: !isLive });
+    toast.success(!isLive ? 'Live Monitoring enabled' : 'Live Monitoring paused');
+  };
+
+  const handleExport = () => {
+    const now = new Date();
+    const lines: string[] = [];
+    lines.push('Solar OS - Monitoring Export');
+    lines.push(`Generated: ${now.toISOString()}`);
+    lines.push(`Mode: ${isLive ? 'LIVE' : 'PAUSED'}`);
+    lines.push('');
+    lines.push('Generation Data (MW)');
+    for (const row of generationData) {
+      lines.push(`${row.time} | Actual: ${row.generation} | Expected: ${row.expected}`);
+    }
+    lines.push('');
+    lines.push('Plant Snapshot');
+    for (const p of computedPlants) {
+      lines.push(`${p.id} | ${p.name} | ${p.capacity} | Health: ${p.health}% | Alerts: ${p.alerts}`);
+    }
+
+    addReport({
+      title: `Monitoring Export - ${now.toISOString().slice(0, 10)}`,
+      status: 'Generated',
+    });
+
+    downloadTextFile(`monitoring-export-${now.toISOString().slice(0, 10)}.txt`, lines.join('\n'));
+    toast.success('Monitoring export downloaded');
+  };
+
+  const handleScheduleCleaning = () => {
+    const target = computedPlants.find((p) => p.id === 'PRJ-2403') ?? computedPlants[0];
+    if (!target) {
+      toast.error('No plants found');
+      return;
+    }
+
+    addServiceTicket({
+      projectId: target.id,
+      customer: target.name,
+      issue: 'Panel soiling suspected — schedule cleaning (AI recommendation)'
+      ,
+      priority: 'Medium',
+      status: 'Open',
+      assignedTo: 'Field Team',
+    });
+    toast.success('Cleaning ticket created in Service & O&M');
+    setCurrentModule('Service & O&M');
+  };
+
+  const handleViewAnalysis = () => {
+    toast.message('AI analysis opened (demo)');
+  };
+
+  const handleViewDetails = (plantId: string) => {
+    toast.message(`Opening details for ${plantId} (demo)`);
+  };
+
+  const handleLiveFeed = (plantId: string) => {
+    toast.message(`Live feed for ${plantId} (demo)`);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -76,11 +176,13 @@ export function MonitoringScreen() {
           <p className="text-sm text-gray-500 mt-1">Real-time performance tracking</p>
         </div>
         <div className="flex items-center gap-3">
-          <Badge className="bg-green-100 text-green-700 gap-2">
-            <div className="w-2 h-2 bg-green-600 rounded-full animate-pulse"></div>
-            Live Monitoring
-          </Badge>
-          <Button variant="outline">Export Data</Button>
+          <button onClick={handleToggleLive} className="text-left">
+            <Badge className={`${isLive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'} gap-2`}>
+              <div className={`w-2 h-2 ${isLive ? 'bg-green-600 animate-pulse' : 'bg-gray-500'} rounded-full`}></div>
+              {isLive ? 'Live Monitoring' : 'Monitoring Paused'}
+            </Badge>
+          </button>
+          <Button variant="outline" onClick={handleExport}>Export Data</Button>
         </div>
       </div>
 
@@ -98,10 +200,10 @@ export function MonitoringScreen() {
                 Analysis indicates panel soiling. <strong>Recommended action:</strong> Schedule cleaning within next 7 days to restore optimal performance.
               </p>
               <div className="flex gap-2 mt-3">
-                <Button size="sm" variant="default" className="bg-yellow-600 hover:bg-yellow-700">
+                <Button size="sm" variant="default" className="bg-yellow-600 hover:bg-yellow-700" onClick={handleScheduleCleaning}>
                   Schedule Cleaning
                 </Button>
-                <Button size="sm" variant="outline">
+                <Button size="sm" variant="outline" onClick={handleViewAnalysis}>
                   View Analysis
                 </Button>
               </div>
@@ -180,7 +282,7 @@ export function MonitoringScreen() {
       <Card className="p-6">
         <h3 className="font-semibold text-gray-900 mb-4">Plant Performance Overview</h3>
         <div className="space-y-4">
-          {plants.map((plant) => (
+          {computedPlants.map((plant) => (
             <Card key={plant.id} className="p-4 border-l-4" style={{
               borderLeftColor: plant.health >= 90 ? '#10b981' : plant.health >= 80 ? '#3b82f6' : '#f59e0b'
             }}>
@@ -248,8 +350,8 @@ export function MonitoringScreen() {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <Button size="sm" variant="outline">View Details</Button>
-                  <Button size="sm" variant="outline">Live Feed</Button>
+                  <Button size="sm" variant="outline" onClick={() => handleViewDetails(plant.id)}>View Details</Button>
+                  <Button size="sm" variant="outline" onClick={() => handleLiveFeed(plant.id)}>Live Feed</Button>
                 </div>
               </div>
             </Card>

@@ -1,3 +1,6 @@
+import { useMemo, useState } from 'react';
+import type { InventoryItem, PurchaseOrder } from '@/app/store/AppStore';
+import { useAppStore } from '@/app/store/AppStore';
 import { Card } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
@@ -13,102 +16,46 @@ import {
   Zap,
   Box
 } from 'lucide-react';
-
-const rawMaterials = [
-  { 
-    name: 'Solar Cells', 
-    unit: 'Units',
-    totalStock: 1200, 
-    reserved: 950, 
-    available: 250, 
-    minStock: 500,
-    status: 'critical',
-    supplier: 'Cell Suppliers Inc',
-    lastOrder: '2 days ago'
-  },
-  { 
-    name: 'Tempered Glass', 
-    unit: 'Sheets',
-    totalStock: 850, 
-    reserved: 400, 
-    available: 450, 
-    minStock: 300,
-    status: 'good',
-    supplier: 'Glass World',
-    lastOrder: '5 days ago'
-  },
-  { 
-    name: 'EVA Film', 
-    unit: 'Rolls',
-    totalStock: 320, 
-    reserved: 180, 
-    available: 140, 
-    minStock: 100,
-    status: 'good',
-    supplier: 'Polymer Tech',
-    lastOrder: '1 week ago'
-  },
-  { 
-    name: 'Aluminum Frame', 
-    unit: 'Pieces',
-    totalStock: 680, 
-    reserved: 520, 
-    available: 160, 
-    minStock: 200,
-    status: 'warning',
-    supplier: 'Frame Masters',
-    lastOrder: '3 days ago'
-  },
-  { 
-    name: 'Junction Box', 
-    unit: 'Units',
-    totalStock: 950, 
-    reserved: 350, 
-    available: 600, 
-    minStock: 200,
-    status: 'good',
-    supplier: 'Electric Components',
-    lastOrder: '4 days ago'
-  },
-  { 
-    name: 'Backsheet', 
-    unit: 'Sheets',
-    totalStock: 540, 
-    reserved: 280, 
-    available: 260, 
-    minStock: 150,
-    status: 'good',
-    supplier: 'Solar Materials Co',
-    lastOrder: '1 week ago'
-  },
-];
-
-const finishedGoods = [
-  { 
-    module: '400W Poly', 
-    stock: 240, 
-    reserved: 180, 
-    available: 60,
-    location: 'Warehouse A' 
-  },
-  { 
-    module: '450W Mono', 
-    stock: 180, 
-    reserved: 120, 
-    available: 60,
-    location: 'Warehouse A' 
-  },
-  { 
-    module: '500W Bifacial', 
-    stock: 95, 
-    reserved: 75, 
-    available: 20,
-    location: 'Warehouse B' 
-  },
-];
+import { toast } from 'sonner';
 
 export function InventoryScreen() {
-  const totalProductionCapacity = 460; // KW
+  const store = useAppStore();
+  const inventory = store.inventory ?? [];
+  const purchaseOrders = store.purchaseOrders ?? [];
+  const { addPurchaseOrder, receivePurchaseOrder } = store;
+  const [search, setSearch] = useState('');
+  const [showCreatePo, setShowCreatePo] = useState(false);
+  const [poForm, setPoForm] = useState({
+    itemId: inventory[0]?.id ?? '',
+    quantity: 100,
+    supplier: 'Default Supplier',
+    expectedDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+  });
+
+  const filteredInventory = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return inventory;
+    return inventory.filter((i) => [i.id, i.name, i.status, i.unit].some((v) => v.toLowerCase().includes(q)));
+  }, [inventory, search]);
+
+  const totalProductionCapacity = useMemo(() => {
+    const cells = inventory.find((i) => i.name.toLowerCase().includes('solar'));
+    if (!cells) return 0;
+    return Math.max(0, Math.round((cells.available * 0.4) / 10) * 10);
+  }, [inventory]);
+
+  const createPoForItem = (item: InventoryItem, qty: number) => {
+    addPurchaseOrder({
+      itemId: item.id,
+      itemName: item.name,
+      quantity: qty,
+      unit: item.unit,
+      supplier: 'Auto Supplier',
+      expectedDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      status: 'Open',
+    });
+    toast.success('Purchase order created');
+  };
 
   return (
     <div className="space-y-6">
@@ -118,11 +65,84 @@ export function InventoryScreen() {
           <h2 className="text-2xl font-semibold text-gray-900">Inventory Management</h2>
           <p className="text-sm text-gray-500 mt-1">Raw materials & finished goods tracking</p>
         </div>
-        <Button className="gap-2">
+        <Button className="gap-2" onClick={() => setShowCreatePo(true)}>
           <Plus className="w-4 h-4" />
           Create Purchase Order
         </Button>
       </div>
+
+      {showCreatePo && (
+        <Card className="p-6">
+          <h3 className="font-semibold text-gray-900 mb-4">Create Purchase Order</h3>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div>
+              <label className="text-sm font-medium text-gray-700">Item</label>
+              <select
+                className="w-full mt-1 px-3 py-2 border rounded-lg"
+                value={poForm.itemId}
+                onChange={(e) => setPoForm({ ...poForm, itemId: e.target.value })}
+              >
+                {inventory.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.id} • {i.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700">Quantity</label>
+              <Input
+                type="number"
+                value={poForm.quantity}
+                onChange={(e) => setPoForm({ ...poForm, quantity: Number(e.target.value) })}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700">Supplier</label>
+              <Input value={poForm.supplier} onChange={(e) => setPoForm({ ...poForm, supplier: e.target.value })} />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700">Expected Date</label>
+              <Input
+                type="date"
+                value={poForm.expectedDate}
+                onChange={(e) => setPoForm({ ...poForm, expectedDate: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="flex gap-3 mt-4">
+            <Button
+              onClick={() => {
+                const item = inventory.find((i) => i.id === poForm.itemId);
+                if (!item) {
+                  toast.error('Select an item');
+                  return;
+                }
+                if (!poForm.quantity || poForm.quantity <= 0) {
+                  toast.error('Quantity must be > 0');
+                  return;
+                }
+                addPurchaseOrder({
+                  itemId: item.id,
+                  itemName: item.name,
+                  quantity: poForm.quantity,
+                  unit: item.unit,
+                  supplier: poForm.supplier || 'Supplier',
+                  expectedDate: poForm.expectedDate,
+                  status: 'Open',
+                });
+                toast.success('Purchase order created');
+                setShowCreatePo(false);
+              }}
+            >
+              Create
+            </Button>
+            <Button variant="outline" onClick={() => setShowCreatePo(false)}>
+              Cancel
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* AI Production Capacity Alert */}
       <Card className="border-purple-200 bg-gradient-to-r from-purple-50 to-blue-50">
@@ -175,7 +195,7 @@ export function InventoryScreen() {
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <Input placeholder="Search materials..." className="pl-10" />
+          <Input placeholder="Search materials..." className="pl-10" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <Button variant="outline">Filter by Status</Button>
       </div>
@@ -198,16 +218,16 @@ export function InventoryScreen() {
               </tr>
             </thead>
             <tbody>
-              {rawMaterials.map((material) => {
-                const stockPercentage = (material.available / material.totalStock) * 100;
+              {filteredInventory.map((material: InventoryItem) => {
+                const stockPercentage = material.totalStock > 0 ? (material.available / material.totalStock) * 100 : 0;
                 return (
-                  <tr key={material.name} className="border-b hover:bg-gray-50">
+                  <tr key={material.id} className="border-b hover:bg-gray-50">
                     <td className="p-3">
                       <div className="flex items-center gap-2">
                         <Package className="w-4 h-4 text-gray-400" />
                         <div>
                           <p className="text-sm font-medium text-gray-900">{material.name}</p>
-                          <p className="text-xs text-gray-500">Last order: {material.lastOrder}</p>
+                          <p className="text-xs text-gray-500">Item: {material.id}</p>
                         </div>
                       </div>
                     </td>
@@ -242,13 +262,87 @@ export function InventoryScreen() {
                         {material.status}
                       </Badge>
                     </td>
-                    <td className="p-3 text-sm text-gray-600">{material.supplier}</td>
+                    <td className="p-3 text-sm text-gray-600">Auto Supplier</td>
                     <td className="p-3">
-                      <Button size="sm" variant="outline">Reorder</Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const qty = Math.max(1, material.minStock * 2);
+                          createPoForItem(material, qty);
+                        }}
+                      >
+                        Reorder
+                      </Button>
                     </td>
                   </tr>
                 );
               })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <Card className="p-6">
+        <h3 className="font-semibold text-gray-900 mb-4">Purchase Orders</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="border-b">
+              <tr>
+                <th className="text-left p-3 text-sm font-semibold text-gray-900">PO ID</th>
+                <th className="text-left p-3 text-sm font-semibold text-gray-900">Item</th>
+                <th className="text-left p-3 text-sm font-semibold text-gray-900">Qty</th>
+                <th className="text-left p-3 text-sm font-semibold text-gray-900">Supplier</th>
+                <th className="text-left p-3 text-sm font-semibold text-gray-900">Expected</th>
+                <th className="text-left p-3 text-sm font-semibold text-gray-900">Status</th>
+                <th className="text-left p-3 text-sm font-semibold text-gray-900">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {purchaseOrders.map((po: PurchaseOrder) => (
+                <tr key={po.id} className="border-b hover:bg-gray-50">
+                  <td className="p-3 text-sm font-medium text-gray-900">{po.id}</td>
+                  <td className="p-3 text-sm text-gray-900">{po.itemName}</td>
+                  <td className="p-3 text-sm text-gray-900">
+                    {po.quantity} {po.unit}
+                  </td>
+                  <td className="p-3 text-sm text-gray-600">{po.supplier}</td>
+                  <td className="p-3 text-sm text-gray-600">{po.expectedDate}</td>
+                  <td className="p-3">
+                    <Badge
+                      className={
+                        po.status === 'Received'
+                          ? 'bg-green-100 text-green-700'
+                          : po.status === 'Cancelled'
+                            ? 'bg-red-100 text-red-700'
+                            : 'bg-blue-100 text-blue-700'
+                      }
+                    >
+                      {po.status}
+                    </Badge>
+                  </td>
+                  <td className="p-3">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={po.status === 'Received' || po.status === 'Cancelled'}
+                      onClick={() => {
+                        receivePurchaseOrder(po.id);
+                        toast.success('PO received. Inventory updated');
+                      }}
+                    >
+                      Receive
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+              {purchaseOrders.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="p-6 text-center text-sm text-gray-500">
+                    No purchase orders yet
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -261,7 +355,7 @@ export function InventoryScreen() {
           Finished Goods Inventory
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {finishedGoods.map((item) => (
+          {[{ module: '400W Poly', stock: 240, reserved: 180, available: 60, location: 'Warehouse A' }].map((item) => (
             <Card key={item.module} className="p-4 border-2">
               <div className="flex items-center justify-between mb-3">
                 <h4 className="font-semibold text-gray-900">{item.module}</h4>

@@ -1,3 +1,6 @@
+import { useMemo } from 'react';
+import { useAppStore } from '@/app/store/AppStore';
+import { toast } from 'sonner';
 import { Card } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
@@ -13,86 +16,6 @@ import {
   Zap
 } from 'lucide-react';
 
-const productionStages = [
-  { 
-    id: 1, 
-    name: 'Glass Cleaning', 
-    batches: 8, 
-    capacity: '40 KW',
-    delay: 0, 
-    machine: 'GC-01',
-    shift: 'Day',
-    status: 'on-track',
-    workers: 2
-  },
-  { 
-    id: 2, 
-    name: 'Cell Stringing', 
-    batches: 7, 
-    capacity: '35 KW',
-    delay: 0, 
-    machine: 'CS-02',
-    shift: 'Day',
-    status: 'on-track',
-    workers: 3
-  },
-  { 
-    id: 3, 
-    name: 'Layup', 
-    batches: 6, 
-    capacity: '30 KW',
-    delay: 15, 
-    machine: 'LY-01',
-    shift: 'Day',
-    status: 'delayed',
-    workers: 2
-  },
-  { 
-    id: 4, 
-    name: 'Lamination', 
-    batches: 4, 
-    capacity: '20 KW',
-    delay: 45, 
-    machine: 'LM-03',
-    shift: 'Night',
-    status: 'bottleneck',
-    workers: 4
-  },
-  { 
-    id: 5, 
-    name: 'Framing', 
-    batches: 5, 
-    capacity: '25 KW',
-    delay: 0, 
-    machine: 'FR-02',
-    shift: 'Day',
-    status: 'on-track',
-    workers: 3
-  },
-  { 
-    id: 6, 
-    name: 'EL Testing', 
-    batches: 5, 
-    capacity: '25 KW',
-    delay: 0, 
-    machine: 'EL-01',
-    shift: 'Day',
-    status: 'on-track',
-    workers: 2
-  },
-  { 
-    id: 7, 
-    name: 'Sun Simulator', 
-    batches: 5, 
-    capacity: '25 KW',
-    delay: 0, 
-    machine: 'SS-01',
-    shift: 'Day',
-    status: 'completed',
-    workers: 2
-  },
-];
-
 const dailyStats = [
   { label: 'Target Production', value: '500 KW', icon: Zap, color: 'text-blue-600' },
   { label: 'Current Production', value: '340 KW', icon: TrendingUp, color: 'text-green-600' },
@@ -101,6 +24,25 @@ const dailyStats = [
 ];
 
 export function ProductionTracker() {
+  const { productionLineStages, productionOrders, projects, reassignWorkers, startProductionBatch, updateProductionLineStage } = useAppStore();
+
+  const shiftLabel = useMemo(() => {
+    const hasNight = (productionLineStages ?? []).some((s) => s.shift === 'Night');
+    return hasNight ? 'Mixed Shift' : 'Day Shift Active';
+  }, [productionLineStages]);
+
+  const downloadTextFile = (filename: string, content: string) => {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -110,7 +52,7 @@ export function ProductionTracker() {
           <p className="text-sm text-gray-500 mt-1">Real-time manufacturing monitoring</p>
         </div>
         <div className="flex gap-3">
-          <Badge className="bg-green-100 text-green-700">Day Shift Active</Badge>
+          <Badge className="bg-green-100 text-green-700">{shiftLabel}</Badge>
           <Badge variant="outline">Factory: Ahmedabad</Badge>
         </div>
       </div>
@@ -130,10 +72,26 @@ export function ProductionTracker() {
                 <strong>Recommended:</strong> Reassign 2 workers from Framing to Lamination immediately.
               </p>
               <div className="flex gap-2 mt-3">
-                <Button size="sm" variant="default" className="bg-red-600 hover:bg-red-700">
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="bg-red-600 hover:bg-red-700"
+                  onClick={() => {
+                    reassignWorkers(5, 4, 2);
+                    toast.success('Workers reassigned: Framing → Lamination');
+                  }}
+                >
                   Reassign Workers
                 </Button>
-                <Button size="sm" variant="outline">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const stage = (productionLineStages ?? []).find((s) => s.id === 4);
+                    if (!stage) return;
+                    toast.message(`Lamination: ${stage.workers} workers • delay +${stage.delay}m • ${stage.shift} shift`);
+                  }}
+                >
                   View Details
                 </Button>
               </div>
@@ -167,7 +125,7 @@ export function ProductionTracker() {
         {/* Timeline visualization */}
         <div className="space-y-4">
           <div className="flex items-center gap-2 overflow-x-auto pb-4">
-            {productionStages.map((stage, index) => (
+            {(productionLineStages ?? []).map((stage, index) => (
               <div key={stage.id} className="flex items-center">
                 <Card className={`p-4 min-w-[200px] border-2 ${
                   stage.status === 'bottleneck' ? 'border-red-500 bg-red-50' :
@@ -220,7 +178,7 @@ export function ProductionTracker() {
                   </div>
                 </Card>
                 
-                {index < productionStages.length - 1 && (
+                {index < (productionLineStages ?? []).length - 1 && (
                   <div className="w-8 h-0.5 bg-gray-300 mx-2"></div>
                 )}
               </div>
@@ -235,22 +193,17 @@ export function ProductionTracker() {
         <Card className="p-6">
           <h3 className="font-semibold text-gray-900 mb-4">Active Batches</h3>
           <div className="space-y-3">
-            {[
-              { id: 'BATCH-247', stage: 'Lamination', project: 'PRJ-2401', kw: '25 KW', progress: 65 },
-              { id: 'BATCH-248', stage: 'Framing', project: 'PRJ-2402', kw: '30 KW', progress: 80 },
-              { id: 'BATCH-249', stage: 'EL Testing', project: 'PRJ-2403', kw: '20 KW', progress: 90 },
-              { id: 'BATCH-250', stage: 'Layup', project: 'PRJ-2404', kw: '15 KW', progress: 45 },
-            ].map((batch) => (
+            {(productionOrders ?? []).map((batch) => (
               <div key={batch.id} className="p-3 border rounded-lg">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <Box className="w-4 h-4 text-blue-600" />
                     <span className="font-medium text-sm">{batch.id}</span>
                   </div>
-                  <Badge variant="outline" className="text-xs">{batch.kw}</Badge>
+                  <Badge variant="outline" className="text-xs">{batch.capacity}</Badge>
                 </div>
                 <div className="text-xs text-gray-600 mb-2">
-                  {batch.stage} • {batch.project}
+                  {batch.stage} • {batch.projectId}
                 </div>
                 <div className="flex items-center gap-2">
                   <Progress value={batch.progress} className="flex-1 h-1.5" />
@@ -258,6 +211,9 @@ export function ProductionTracker() {
                 </div>
               </div>
             ))}
+            {(productionOrders ?? []).length === 0 && (
+              <div className="p-6 text-center text-sm text-gray-500">No active batches</div>
+            )}
           </div>
         </Card>
 
@@ -294,9 +250,49 @@ export function ProductionTracker() {
 
       {/* Action Bar */}
       <div className="flex justify-end gap-3">
-        <Button variant="outline">Export Report</Button>
-        <Button variant="outline">Shift Handover</Button>
-        <Button>Start New Batch</Button>
+        <Button
+          variant="outline"
+          onClick={() => {
+            const lines = (productionLineStages ?? []).map((s) =>
+              `${s.id}. ${s.name} | batches=${s.batches} | workers=${s.workers} | delay=+${s.delay}m | ${s.shift} | ${s.status}`,
+            );
+            const content = [
+              `Production Report (${new Date().toLocaleString()})`,
+              '',
+              'Stages:',
+              ...lines,
+              '',
+              `Active Batches: ${(productionOrders ?? []).length}`,
+            ].join('\n');
+            downloadTextFile('production-report.txt', content);
+            toast.success('Report exported');
+          }}
+        >
+          Export Report
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => {
+            const bottleneck = (productionLineStages ?? []).find((s) => s.status === 'bottleneck')?.id;
+            if (!bottleneck) {
+              toast.success('No bottleneck stage');
+              return;
+            }
+            updateProductionLineStage(bottleneck, { shift: 'Day' });
+            toast.success('Shift handover applied');
+          }}
+        >
+          Shift Handover
+        </Button>
+        <Button
+          onClick={() => {
+            const projectId = projects[0]?.id ?? 'PRJ-2401';
+            startProductionBatch(projectId, '10 KW');
+            toast.success('New batch started');
+          }}
+        >
+          Start New Batch
+        </Button>
       </div>
     </div>
   );

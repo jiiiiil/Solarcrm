@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useAppStore } from '@/app/store/AppStore';
 import { Card } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
@@ -16,6 +17,7 @@ import {
   Gauge
 } from 'lucide-react';
 import { Progress } from '@/app/components/ui/progress';
+import { toast } from 'sonner';
 
 const surveySteps = [
   { id: 1, label: 'Site Photos', completed: true },
@@ -25,11 +27,18 @@ const surveySteps = [
 ];
 
 export function SurveyScreen() {
-  const [roofArea, setRoofArea] = useState('450');
-  const [shadowPercentage, setShadowPercentage] = useState([15]);
-  const [direction, setDirection] = useState('South');
+  const { surveys, leads, updateSurvey, updateLead, setCurrentModule, addQuotation } = useAppStore();
+  const [selectedSurveyId, setSelectedSurveyId] = useState<string>(surveys[0]?.id ?? '');
 
-  const progress = (surveySteps.filter(s => s.completed).length / surveySteps.length) * 100;
+  const selectedSurvey = useMemo(() => surveys.find((s) => s.id === selectedSurveyId), [surveys, selectedSurveyId]);
+  const lead = useMemo(() => (selectedSurvey ? leads.find((l) => l.id === selectedSurvey.leadId) : undefined), [leads, selectedSurvey]);
+
+  const [roofArea, setRoofArea] = useState(selectedSurvey?.roofArea ?? '0');
+  const [shadowPercentage, setShadowPercentage] = useState([selectedSurvey?.shadowPercentage ?? 0]);
+  const [direction, setDirection] = useState(selectedSurvey?.direction ?? 'South');
+  const [roofType, setRoofType] = useState(selectedSurvey?.roofType ?? 'Flat');
+
+  const progress = (surveySteps.filter((s) => s.completed).length / surveySteps.length) * 100;
 
   return (
     <div className="space-y-6">
@@ -37,10 +46,43 @@ export function SurveyScreen() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-semibold text-gray-900">Site Survey</h2>
-          <p className="text-sm text-gray-500 mt-1">Project: PRJ-2405 | Ramesh Industries</p>
+          <p className="text-sm text-gray-500 mt-1">
+            {selectedSurvey ? `Lead: ${selectedSurvey.leadId}${lead ? ` | ${lead.name}` : ''}` : 'No surveys yet'}
+          </p>
         </div>
-        <Badge className="bg-blue-100 text-blue-700">Survey In Progress</Badge>
+        <Badge className="bg-blue-100 text-blue-700">{selectedSurvey?.status ?? 'Planned'}</Badge>
       </div>
+
+      <Card className="p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-gray-900">Select Survey</p>
+            <select
+              className="w-full mt-1 px-3 py-2 border rounded-lg"
+              value={selectedSurveyId}
+              onChange={(e) => {
+                const nextId = e.target.value;
+                setSelectedSurveyId(nextId);
+                const next = surveys.find((s) => s.id === nextId);
+                setRoofArea(next?.roofArea ?? '0');
+                setShadowPercentage([next?.shadowPercentage ?? 0]);
+                setDirection(next?.direction ?? 'South');
+                setRoofType(next?.roofType ?? 'Flat');
+              }}
+            >
+              {surveys.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.id} • {s.leadId} • {s.status}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-gray-500">GPS</p>
+            <p className="text-sm font-medium text-gray-900">{selectedSurvey?.gpsLocation ?? '-'}</p>
+          </div>
+        </div>
+      </Card>
 
       {/* Progress Bar */}
       <Card className="p-4">
@@ -219,8 +261,9 @@ export function SurveyScreen() {
                 {['Flat', 'Sloped', 'Mixed', 'Ground'].map((type) => (
                   <Button
                     key={type}
-                    variant="outline"
+                    variant={roofType === type ? 'default' : 'outline'}
                     className="h-12"
+                    onClick={() => setRoofType(type)}
                   >
                     <Home className="w-4 h-4 mr-2" />
                     {type}
@@ -243,10 +286,64 @@ export function SurveyScreen() {
 
       {/* Action Buttons */}
       <div className="flex justify-between">
-        <Button variant="outline">Save as Draft</Button>
+        <Button
+          variant="outline"
+          onClick={() => {
+            if (!selectedSurvey) {
+              toast.error('No survey selected');
+              return;
+            }
+            updateSurvey(selectedSurvey.id, {
+              roofArea,
+              shadowPercentage: shadowPercentage[0] ?? 0,
+              direction,
+              roofType,
+              status: 'In Progress',
+            });
+            toast.success('Survey saved');
+          }}
+        >
+          Save as Draft
+        </Button>
         <div className="flex gap-3">
-          <Button variant="outline">Previous Step</Button>
-          <Button className="gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setCurrentModule('Leads & CRM');
+              toast.success('Back to Leads');
+            }}
+          >
+            Previous Step
+          </Button>
+          <Button
+            className="gap-2"
+            onClick={() => {
+              if (!selectedSurvey || !lead) {
+                toast.error('Select a valid survey');
+                return;
+              }
+              updateSurvey(selectedSurvey.id, {
+                roofArea,
+                shadowPercentage: shadowPercentage[0] ?? 0,
+                direction,
+                roofType,
+                status: 'Completed',
+              });
+              updateLead(lead.id, { status: 'Qualified' });
+
+              addQuotation({
+                leadId: lead.id,
+                customer: lead.name,
+                capacity: lead.capacity,
+                perWattPrice: 28.0,
+                totalAmount: 280000,
+                status: 'Draft',
+              });
+
+              toast.success('Survey completed. Draft quotation created');
+              setCurrentModule('Quotations');
+            }}
+          >
             Continue to Shadow Analysis
             <CheckCircle2 className="w-4 h-4" />
           </Button>

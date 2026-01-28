@@ -1,6 +1,9 @@
 import { Card } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
+import { Input } from '@/app/components/ui/input';
+import { useAppStore } from '@/app/store/AppStore';
+import { toast } from 'sonner';
 import { 
   Wallet, 
   TrendingUp, 
@@ -13,6 +16,7 @@ import {
   Clock
 } from 'lucide-react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useMemo, useState, ChangeEvent } from 'react';
 
 const monthlyData = [
   { month: 'Jan', revenue: 9500000, cost: 6800000, profit: 2700000 },
@@ -23,41 +27,15 @@ const monthlyData = [
   { month: 'Jun', revenue: 12000000, cost: 8100000, profit: 3900000 },
 ];
 
-const projectFinances = [
-  {
-    id: 'PRJ-2401',
-    customer: 'Ramesh Industries',
-    capacity: '50 KW',
-    totalValue: 2500000,
-    received: 1875000,
-    pending: 625000,
-    status: 'On Track',
-    margin: 22,
-    dueDate: '5 days'
-  },
-  {
-    id: 'PRJ-2402',
-    customer: 'Sunshine Developers',
-    capacity: '100 KW',
-    totalValue: 5200000,
-    received: 2600000,
-    pending: 2600000,
-    status: 'Pending',
-    margin: 24,
-    dueDate: 'Overdue 3 days'
-  },
-  {
-    id: 'PRJ-2403',
-    customer: 'Green Energy Co.',
-    capacity: '75 KW',
-    totalValue: 3900000,
-    received: 3900000,
-    pending: 0,
-    status: 'Completed',
-    margin: 26,
-    dueDate: 'Paid'
-  },
-];
+function downloadTextFile(filename: string, content: string) {
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 const stats = [
   { label: 'Total Revenue (Month)', value: '₹1.2 CR', change: '+24%', trend: 'up', icon: TrendingUp },
@@ -67,6 +45,185 @@ const stats = [
 ];
 
 export function FinanceScreen() {
+  const { projects, invoices, payments, addInvoice, updateInvoice, addPayment, addReport } = useAppStore();
+  const [showCreateInvoice, setShowCreateInvoice] = useState(false);
+  const [invoiceForm, setInvoiceForm] = useState({
+    projectId: projects?.[0]?.id ?? '',
+    amount: '',
+    dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+  });
+
+  const projectFinances = useMemo(() => {
+    const now = new Date();
+    const safeProjects = projects ?? [];
+    const safeInvoices = invoices ?? [];
+    const safePayments = payments ?? [];
+
+    return safeProjects.map((p) => {
+      const projectInvoices = safeInvoices.filter((i) => i.projectId === p.id);
+      const invoiceIds = new Set(projectInvoices.map((i) => i.id));
+      const received = safePayments
+        .filter((pay) => invoiceIds.has(pay.invoiceId) && pay.status === 'Completed')
+        .reduce((sum, pay) => sum + (pay.amount || 0), 0);
+
+      const totalValue = p.totalValue || 0;
+      const pending = Math.max(0, totalValue - received);
+
+      const latestInvoice = projectInvoices
+        .slice()
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+
+      const dueDateStr = latestInvoice?.dueDate;
+      const dueDate = dueDateStr ? new Date(dueDateStr) : undefined;
+      const daysDiff = dueDate ? Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) : undefined;
+
+      const hasOverdue = projectInvoices.some((i) => {
+        const d = new Date(i.dueDate);
+        return (i.status === 'Overdue' || (i.status !== 'Paid' && d.getTime() < now.getTime()));
+      });
+
+      const status = pending <= 0 ? 'Completed' : hasOverdue ? 'Pending' : 'On Track';
+      const margin = 22;
+
+      let dueDateLabel = '-';
+      if (pending <= 0) {
+        dueDateLabel = 'Paid';
+      } else if (dueDate && typeof daysDiff === 'number') {
+        if (daysDiff < 0) dueDateLabel = `Overdue ${Math.abs(daysDiff)} days`;
+        else dueDateLabel = `${daysDiff} days`;
+      }
+
+      return {
+        id: p.id,
+        customer: p.customer,
+        capacity: p.capacity,
+        totalValue,
+        received,
+        pending,
+        status,
+        margin,
+        dueDate: dueDateLabel,
+      };
+    });
+  }, [projects, invoices, payments]);
+
+  const counts = useMemo(() => {
+    const now = new Date();
+    const safeInvoices = invoices ?? [];
+    let pendingCount = 0;
+    let overdueCount = 0;
+    let paidCount = 0;
+
+    for (const inv of safeInvoices) {
+      if (inv.status === 'Paid') {
+        paidCount += 1;
+        continue;
+      }
+
+      const due = new Date(inv.dueDate);
+      if (inv.status === 'Overdue' || due.getTime() < now.getTime()) overdueCount += 1;
+      else pendingCount += 1;
+    }
+
+    return { pendingCount, overdueCount, paidCount };
+  }, [invoices]);
+
+  const onInvoiceFormChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setInvoiceForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleCreateInvoice = () => {
+    if (!invoiceForm.projectId) {
+      toast.error('Select a project');
+      return;
+    }
+    const amount = Number(invoiceForm.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error('Enter a valid amount');
+      return;
+    }
+    if (!invoiceForm.dueDate) {
+      toast.error('Select a due date');
+      return;
+    }
+
+    addInvoice({
+      projectId: invoiceForm.projectId,
+      amount,
+      dueDate: invoiceForm.dueDate,
+      status: 'Draft',
+      paidAmount: 0,
+    });
+
+    toast.success('Invoice created');
+    setShowCreateInvoice(false);
+    setInvoiceForm((prev) => ({ ...prev, amount: '' }));
+  };
+
+  const handleGenerateReport = () => {
+    const now = new Date();
+    const lines: string[] = [];
+    lines.push('Solar OS - Finance Report');
+    lines.push(`Generated: ${now.toISOString()}`);
+    lines.push('');
+    lines.push(`Projects: ${(projects ?? []).length}`);
+    lines.push(`Invoices: ${(invoices ?? []).length}`);
+    lines.push(`Payments: ${(payments ?? []).length}`);
+    lines.push('');
+    lines.push('Project Summary');
+    for (const p of projectFinances) {
+      lines.push(
+        `${p.id} | ${p.customer} | Total: ₹${p.totalValue} | Received: ₹${p.received} | Pending: ₹${p.pending} | Status: ${p.status}`,
+      );
+    }
+
+    addReport({
+      title: `Finance Report - ${now.toISOString().slice(0, 10)}`,
+      status: 'Generated',
+    });
+
+    downloadTextFile(`finance-report-${now.toISOString().slice(0, 10)}.txt`, lines.join('\n'));
+    toast.success('Report generated & downloaded');
+  };
+
+  const overdueInvoice = useMemo(() => {
+    const now = new Date();
+    const safeInvoices = invoices ?? [];
+    return safeInvoices
+      .slice()
+      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+      .find((i) => i.status !== 'Paid' && new Date(i.dueDate).getTime() < now.getTime());
+  }, [invoices]);
+
+  const handleSendReminder = () => {
+    if (!overdueInvoice) {
+      toast.message('No overdue invoices found');
+      return;
+    }
+    updateInvoice(overdueInvoice.id, { status: 'Overdue' });
+    toast.success('Reminder queued (demo)');
+  };
+
+  const handleCallCustomer = () => {
+    toast.message('Call scheduled (demo)');
+  };
+
+  const handleMarkPaidDemo = () => {
+    if (!overdueInvoice) {
+      toast.message('No invoice to mark paid');
+      return;
+    }
+    addPayment({
+      invoiceId: overdueInvoice.id,
+      amount: overdueInvoice.amount,
+      method: 'Bank Transfer',
+      status: 'Completed',
+    });
+    updateInvoice(overdueInvoice.id, { status: 'Paid', paidAmount: overdueInvoice.amount });
+    toast.success('Payment recorded');
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -76,10 +233,63 @@ export function FinanceScreen() {
           <p className="text-sm text-gray-500 mt-1">Financial overview & project billing</p>
         </div>
         <div className="flex gap-3">
-          <Button variant="outline">Generate Report</Button>
-          <Button>Create Invoice</Button>
+          <Button variant="outline" onClick={handleGenerateReport}>Generate Report</Button>
+          <Button onClick={() => setShowCreateInvoice(true)}>Create Invoice</Button>
         </div>
       </div>
+
+      {showCreateInvoice && (
+        <Card className="p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <h3 className="font-semibold text-gray-900">Create Invoice</h3>
+              <p className="text-sm text-gray-500 mt-1">Create a new project invoice (saved in localStorage)</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+                <div>
+                  <label className="text-sm text-gray-600">Project</label>
+                  <select
+                    name="projectId"
+                    value={invoiceForm.projectId}
+                    onChange={onInvoiceFormChange}
+                    className="mt-1 w-full border border-gray-200 rounded-md px-3 py-2 text-sm"
+                  >
+                    <option value="">Select project</option>
+                    {(projects ?? []).map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.id} - {p.customer}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm text-gray-600">Amount</label>
+                  <Input
+                    name="amount"
+                    value={invoiceForm.amount}
+                    onChange={onInvoiceFormChange}
+                    placeholder="e.g. 250000"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-gray-600">Due Date</label>
+                  <Input
+                    type="date"
+                    name="dueDate"
+                    value={invoiceForm.dueDate}
+                    onChange={onInvoiceFormChange}
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 mt-4">
+                <Button onClick={handleCreateInvoice}>Create</Button>
+                <Button variant="outline" onClick={() => setShowCreateInvoice(false)}>Cancel</Button>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* AI Finance Alert */}
       <Card className="border-yellow-200 bg-gradient-to-r from-yellow-50 to-orange-50">
@@ -91,15 +301,24 @@ export function FinanceScreen() {
             <div className="flex-1">
               <h3 className="font-semibold text-gray-900 mb-1">AI Payment Alert</h3>
               <p className="text-sm text-gray-700">
-                <strong>Invoice overdue detected:</strong> Project PRJ-2402 (Sunshine Developers) payment of ₹26 L is overdue by 3 days. 
-                Auto-reminder sent. <strong>Recommended:</strong> Follow up call scheduled for today 3:00 PM.
+                <strong>Invoice overdue detected:</strong>{' '}
+                {overdueInvoice ? (
+                  <>
+                    Invoice <strong>{overdueInvoice.id}</strong> is overdue. Auto-reminder recommended.
+                  </>
+                ) : (
+                  <>No overdue invoice detected. Finance is on track.</>
+                )}
               </p>
               <div className="flex gap-2 mt-3">
-                <Button size="sm" variant="default" className="bg-yellow-600 hover:bg-yellow-700">
+                <Button size="sm" variant="default" className="bg-yellow-600 hover:bg-yellow-700" onClick={handleSendReminder}>
                   Send Reminder
                 </Button>
-                <Button size="sm" variant="outline">
+                <Button size="sm" variant="outline" onClick={handleCallCustomer}>
                   Call Customer
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleMarkPaidDemo}>
+                  Mark Paid (Demo)
                 </Button>
               </div>
             </div>
@@ -254,7 +473,7 @@ export function FinanceScreen() {
             </div>
             <div>
               <p className="font-semibold text-gray-900">Pending Invoices</p>
-              <p className="text-sm text-gray-500">8 invoices</p>
+              <p className="text-sm text-gray-500">{counts.pendingCount} invoices</p>
             </div>
           </div>
         </Card>
@@ -265,7 +484,7 @@ export function FinanceScreen() {
             </div>
             <div>
               <p className="font-semibold text-gray-900">Completed Payments</p>
-              <p className="text-sm text-gray-500">24 this month</p>
+              <p className="text-sm text-gray-500">{counts.paidCount} invoices paid</p>
             </div>
           </div>
         </Card>
@@ -276,7 +495,7 @@ export function FinanceScreen() {
             </div>
             <div>
               <p className="font-semibold text-gray-900">Overdue</p>
-              <p className="text-sm text-gray-500">3 invoices</p>
+              <p className="text-sm text-gray-500">{counts.overdueCount} invoices</p>
             </div>
           </div>
         </Card>
